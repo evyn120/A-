@@ -19,6 +19,11 @@ import sys
 import argparse
 from datetime import datetime, timezone, timedelta
 from string import Template
+try:
+    from anomaly import build_us_anomaly_prompt_text, make_us_anomaly_html
+except ImportError:
+    build_us_anomaly_prompt_text = None
+    make_us_anomaly_html = None
 
 # ── LLM Provider Abstraction ─────────────────────────────
 
@@ -129,6 +134,11 @@ def build_prompt(market_data: dict, news_data: dict) -> str:
             for s in market_data["us"]["top_losers"][:10]:
                 market_summary += f"  🔴 {s['name']}: {s['change_pct']:+.2f}%\n"
 
+        if build_us_anomaly_prompt_text:
+            market_summary += "\n美股異動監控:\n"
+            market_summary += build_us_anomaly_prompt_text(market_data)
+            market_summary += "\n"
+
     if "other" in market_data:
         market_summary += "\n=== 其他指標 ===\n"
         for s in market_data["other"]:
@@ -195,9 +205,11 @@ def build_prompt(market_data: dict, news_data: dict) -> str:
 要求：
 1. key_news 選 8-10 條最重要的新聞，每條都要點出對港美股的實際影響
 2. key_movers 港股和美股各選 3-5 隻最值得關注的個股
-3. 所有內容用繁體中文
-4. 保持專業但易懂的語調
-5. 只回覆 JSON，不要任何額外文字"""
+3. 美股 key_movers 必須優先參考「美股異動監控」中的個股，重點說明其價量異動原因
+4. 若美股異動同時伴隨重大新聞，請在摘要中指出可能關聯
+5. 所有內容用繁體中文
+6. 保持專業但易懂的語調
+7. 只回覆 JSON，不要任何額外文字"""
 
     return prompt
 
@@ -403,6 +415,11 @@ def generate_html(analysis: dict, market_data: dict, news_data: dict = None) -> 
     if "us" in market_data:
         us_indices_rows = make_table_rows(market_data["us"].get("indices", []))
         us_stocks_rows = make_table_rows(market_data["us"].get("stocks", []))
+
+    # ── US anomaly monitor ──
+    us_anomaly_html = ""
+    if make_us_anomaly_html:
+        us_anomaly_html = make_us_anomaly_html(market_data)
 
     # ── Other indicators ──
     other_rows = make_table_rows(market_data.get("other", []))
@@ -677,6 +694,7 @@ header{{display:flex;align-items:center;gap:16px;margin-bottom:36px;animation:fa
           </table>
         </div>
       </details>
+      {us_anomaly_html}
     </div>
   </div>
 
